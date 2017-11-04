@@ -123,9 +123,10 @@ contract MyEtherMarket {
         }
     }
     
-    function getBid(bytes32 hash) public constant returns (uint amountGet, uint nonce, address user, bytes32 bookNext, bytes32 bookPrev){
+    function getBid(bytes32 hash) public constant returns (uint amountGet, uint amountGive, uint nonce, address user, bytes32 bookNext, bytes32 bookPrev){
         // Creates new struct and saves in storage. We leave out the mapping type.
         amountGet = bids[hash].amountGet;
+        amountGive = bids[hash].amountGive;
         nonce = bids[hash].nonce;
         user = bids[hash].user;
         bookNext = bids[hash].bookNext;
@@ -190,9 +191,10 @@ contract MyEtherMarket {
         }
     }
     
-    function getAsk(bytes32 hash) public constant returns (uint amountGet, uint nonce, address user, bytes32 bookNext, bytes32 bookPrev){
+    function getAsk(bytes32 hash) public constant returns (uint amountGet, uint amountGive, uint nonce, address user, bytes32 bookNext, bytes32 bookPrev){
         // Creates new struct and saves in storage. We leave out the mapping type.
         amountGet = asks[hash].amountGet;
+        amountGive = asks[hash].amountGive;
         nonce = asks[hash].nonce;
         user = asks[hash].user;
         bookNext = asks[hash].bookNext;
