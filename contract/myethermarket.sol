@@ -27,9 +27,8 @@ contract MyEtherMarket {
     struct Bid {
         // bids automatically have tokenGet as address, know tokenGive is ether
         //address token; Dont need token, mapped to book with token known
-        uint amountGet; // in terms of token
         uint amountGive; // in terms of ether
-        uint rate; // amountGet/amountGive - token price in ether. ugly, but need to sort by this, so keep as storage
+        uint rate; // token price in wei
         uint nonce;
         bool exists;
         address user;
@@ -41,9 +40,8 @@ contract MyEtherMarket {
     struct Ask {
         // bids automatically have tokenGet as address, know tokenAsk is ether
         //address token; Dont need token, mapped to book with token known
-        uint amountGet;
-        uint amountGive;
-        uint rate; // amountGive/amountGet - token price in ether
+        uint amountGive; // in terms of token
+        uint rate; // token price in wei
         uint nonce;
         bool exists;
         address user;
@@ -69,15 +67,15 @@ contract MyEtherMarket {
     // ---------------------------------   BIDS    ---------------------------------
     // this would be called by the user to offer a new bid
     // TODO: likely create a minimum order threshhold in eth, probably a dynamic variable controlled by admin. This would be to economically prevent book spam attacks.
-    function newBid(address token, uint amountGet, uint amountGive, uint nonce) public returns (bytes32 hash){
+    function newBid(address token, uint amountGive, uint rate, uint nonce) public returns (bytes32 hash){
         // Creates new struct and saves in storage. We leave out the mapping type.
-        hash = sha256(msg.sender, token, amountGet, amountGive, nonce);
+        hash = sha256(msg.sender, token, amountGive, rate, nonce);
         // check for duplicates, then claim hash. irreversable.
         require(!bids[hash].exists);
         // create struct - dummy hashes for the struct
-        bids[hash] = Bid(amountGet, amountGive, amountGet/amountGive, nonce, true, msg.sender, 0, 0);
+        bids[hash] = Bid(amountGive, rate, nonce, true, msg.sender, 0, 0);
         // insert into book
-        insertBookBid(token, hash, amountGet/amountGive);
+        insertBookBid(token, hash, rate);
     }
     
     // this is called internally to insert a new bid into the book
@@ -123,29 +121,29 @@ contract MyEtherMarket {
         }
     }
     
-    function getBid(bytes32 hash) public constant returns (uint amountGet, uint amountGive, uint nonce, address user, bytes32 bookNext, bytes32 bookPrev){
+    function getBid(bytes32 hash) public constant returns (uint amountGive, uint rate, uint nonce, address user, bytes32 bookNext, bytes32 bookPrev){
         // Creates new struct and saves in storage. We leave out the mapping type.
-        amountGet = bids[hash].amountGet;
         amountGive = bids[hash].amountGive;
+        rate = bids[hash].rate;
         nonce = bids[hash].nonce;
         user = bids[hash].user;
         bookNext = bids[hash].bookNext;
         bookPrev = bids[hash].bookPrev;
     }
     
-    // ---------------------------------   BIDS    ---------------------------------
+    // ---------------------------------   ASKS    ---------------------------------
     
     // this would be called by the user to offer a new ask
     // TODO: likely create a minimum order threshhold in eth, probably a dynamic variable controlled by admin. This would be to economically prevent book spam attacks.
-    function newAsk(address token, uint amountGet, uint amountGive, uint nonce) public returns (bytes32 hash){
+    function newAsk(address token, uint amountGive, uint rate, uint nonce) public returns (bytes32 hash){
         // Creates new struct and saves in storage. We leave out the mapping type.
-        hash = sha256(this, token, amountGet, amountGive, nonce);
+        hash = sha256(this, token, amountGive, rate, nonce);
         // check for duplicates, then claim hash. irreversable.
         require(!asks[hash].exists);
         // create struct - dummy hashes for the struct
-        asks[hash] = Ask(amountGet, amountGive, amountGet/amountGive, nonce, true, msg.sender, 0, 0);
+        asks[hash] = Ask(amountGive, rate, nonce, true, msg.sender, 0, 0);
         // insert into book
-        insertBookAsk(token, hash, amountGet/amountGive);
+        insertBookAsk(token, hash, rate);
     }
     
     // this is called internally to insert a new bid into the book
@@ -191,10 +189,10 @@ contract MyEtherMarket {
         }
     }
     
-    function getAsk(bytes32 hash) public constant returns (uint amountGet, uint amountGive, uint nonce, address user, bytes32 bookNext, bytes32 bookPrev){
+    function getAsk(bytes32 hash) public constant returns (uint amountGive, uint rate, uint nonce, address user, bytes32 bookNext, bytes32 bookPrev){
         // Creates new struct and saves in storage. We leave out the mapping type.
-        amountGet = asks[hash].amountGet;
         amountGive = asks[hash].amountGive;
+        rate = asks[hash].rate;
         nonce = asks[hash].nonce;
         user = asks[hash].user;
         bookNext = asks[hash].bookNext;
