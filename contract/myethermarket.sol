@@ -161,29 +161,32 @@ contract MyEtherMarket is SafeMath {
             // there is an order to fill
             fillAsk(bookAskRoot[token], hash, safeMul(asks[bookAskRoot[token]].amountGive, asks[bookAskRoot[token]].rate) / (1 ether), token);
         }
-        // decreasing order for bids, so check if we are greater than
-        if (bookBidRoot[token] == 0) {
-            bookBidRoot[token] = hash;
-        } else {
-            if (bids[bookBidRoot[token]].rate < thisRate) {
-                // special case: we go at the front of the book
-                bids[hash].bookNext = bookBidRoot[token];
-                bids[bookBidRoot[token]].bookPrev = hash;
+        // if there is any left to give, place in the book
+        if (bids[hash].amountGive > 0) {
+            // decreasing order for bids, so check if we are greater than
+            if (bookBidRoot[token] == 0) {
                 bookBidRoot[token] = hash;
             } else {
-                bytes32 current = bookBidRoot[token];
-                // decreasing order for bids (highest first)
-                while (bids[current].bookNext != 0 && bids[bids[current].bookNext].rate >= thisRate) {
-                    current = bids[current].bookNext;
+                if (bids[bookBidRoot[token]].rate < thisRate) {
+                    // special case: we go at the front of the book
+                    bids[hash].bookNext = bookBidRoot[token];
+                    bids[bookBidRoot[token]].bookPrev = hash;
+                    bookBidRoot[token] = hash;
+                } else {
+                    bytes32 current = bookBidRoot[token];
+                    // decreasing order for bids (highest first)
+                    while (bids[current].bookNext != 0 && bids[bids[current].bookNext].rate >= thisRate) {
+                        current = bids[current].bookNext;
+                    }
+                    if (bids[current].bookNext != 0) {
+                        // my next is current's next, my new next's previous is me
+                        bids[hash].bookNext = bids[current].bookNext;
+                        bids[bids[hash].bookNext].bookPrev = hash;
+                    }
+                    // my previous is current, current's next is me
+                    bids[hash].bookPrev = current;
+                    bids[current].bookNext = hash;
                 }
-                if (bids[current].bookNext != 0) {
-                    // my next is current's next, my new next's previous is me
-                    bids[hash].bookNext = bids[current].bookNext;
-                    bids[bids[hash].bookNext].bookPrev = hash;
-                }
-                // my previous is current, current's next is me
-                bids[hash].bookPrev = current;
-                bids[current].bookNext = hash;
             }
         }
     }
