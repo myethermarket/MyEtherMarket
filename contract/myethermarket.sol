@@ -106,10 +106,10 @@ contract MyEtherMarket is SafeMath {
     
     // ---------------------------   DEPOSIT/WITHDRAWAL    -------------------------
     // ETHER
-    function deposit() payable {
+    function deposit() payable public {
         walletBalance[0][msg.sender] = safeAdd(walletBalance[0][msg.sender], msg.value);
     }
-    function withdraw(uint amount) {
+    function withdraw(uint amount) public {
         require(walletBalance[0][msg.sender] >= amount);
         walletBalance[0][msg.sender] = safeSub(walletBalance[0][msg.sender], amount);
         if (!msg.sender.call.value(amount)()) {
@@ -117,7 +117,7 @@ contract MyEtherMarket is SafeMath {
         }
     }
     // TOKENS
-    function depositToken(address token, uint amount) {
+    function depositToken(address token, uint amount) public {
         //remember to call Token(address).approve(this, amount) or this contract will not be able to do the transfer on your behalf.
         if (token==0) {
             require(false);
@@ -125,7 +125,7 @@ contract MyEtherMarket is SafeMath {
         require(!Token(token).transferFrom(msg.sender, this, amount));
         walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], amount);
     }
-    function withdrawToken(address token, uint amount) {
+    function withdrawToken(address token, uint amount) public {
         if(token==0) {
             require(false);
         }
@@ -157,8 +157,8 @@ contract MyEtherMarket is SafeMath {
     function insertBookBid(address token, bytes32 hash, uint thisRate) private {
         // books are linked lists
         // check the priceline
-        while (bookAskRoot[token] != 0 && thisRate >= bids[bookAskRoot[token]].rate && bids[hash].amountGive > 0) {
-            // there is an order to fill
+        while (bookAskRoot[token] != 0 && thisRate >= asks[bookAskRoot[token]].rate && bids[hash].amountGive > 0) {
+            // there is an ask to fill
             fillAsk(bookAskRoot[token], hash, safeMul(asks[bookAskRoot[token]].amountGive, asks[bookAskRoot[token]].rate) / (1 ether), token);
         }
         // if there is any left to give, place in the book
@@ -205,10 +205,35 @@ contract MyEtherMarket is SafeMath {
     }
     
     // this is called internally to fill a bid in the book
-    function fillBid(address token, bytes32 hash, bool totalFill) private {
-        if (!totalFill) {
-            // give tokens
-            
+    function fillBid(bytes32 makerHash, bytes32 takerHash, uint amountTokensNeededToFillBid, address token) private {
+       // descriptive: if (amountTokensMyAskCanFill >= amountTokensNeededToFillBid) {
+        if (asks[takerHash].amountGive >= amountTokensNeededToFillBid) {// comparing in tokens
+            // maker gets their order removed and their amount needed to fill
+            removeBookBid(token, makerHash);
+            // maker is a bidder, they get tokens
+            walletBalance[token][bids[makerHash].user] = safeAdd(walletBalance[token][bids[makerHash].user], amountTokensNeededToFillBid);
+            // taker reduces his amount given and then gets his ether
+            asks[takerHash].amountGive = safeSub(asks[takerHash].amountGive, amountTokensNeededToFillBid);
+            walletBalance[0][msg.sender] = safeAdd(walletBalance[0][msg.sender], bids[makerHash].amountGive);
+        } else {
+            // maker gets their amountGive reduced by the taker's available amountGive
+            // maker gets all the tokens from the taker
+            walletBalance[token][bids[makerHash].user] = safeAdd(walletBalance[token][bids[makerHash].user], asks[takerHash].amountGive);
+            // maker must reduce amountGive at makers rate. This should be less than the remaining amountGive.
+            // if it is not less, it is between rounding tolerance, so clear both orders
+            if (safeMul(asks[takerHash].amountGive, bids[makerHash].rate) / (1 ether) >= bids[makerHash].amountGive) { // comparing in wei
+                // we are also clearing the ask order due to rounding
+                removeBookBid(token, makerHash);
+                // taker gets all remainnig eth from the maker
+                walletBalance[0][msg.sender] = safeAdd(walletBalance[0][msg.sender], bids[makerHash].amountGive);
+            } else {
+                // subtract appropriate amount of tokens from the maker's order
+                bids[makerHash].amountGive = safeSub(bids[makerHash].amountGive, safeMul(asks[takerHash].amountGive, bids[makerHash].rate) / (1 ether));
+                // taker gets those eth from the maker
+                walletBalance[0][msg.sender] = safeAdd(walletBalance[0][msg.sender], safeMul(asks[takerHash].amountGive, bids[makerHash].rate) / (1 ether));
+            }
+            // taker was cleared out
+            asks[takerHash].amountGive = 0;
         }
     }
     
@@ -241,30 +266,38 @@ contract MyEtherMarket is SafeMath {
     
     // this is called internally to insert a new bid into the book
     function insertBookAsk(address token, bytes32 hash, uint thisRate) private {
-        // book is a linked list
-        // increasing order for asks, so check if we are less than
-        if (bookAskRoot[token] == 0) {
-            bookAskRoot[token] = hash;
-        } else {
-            if (asks[bookAskRoot[token]].rate > thisRate) {
-                // special case: we go at the front of the book
-                asks[hash].bookNext = bookAskRoot[token];
-                asks[bookAskRoot[token]].bookPrev = hash;
+        // books are linked lists
+        // check the priceline
+        while (bookBidRoot[token] != 0 && thisRate <= bids[bookBidRoot[token]].rate && asks[hash].amountGive > 0) {
+            // there is a bid to fill
+            fillBid(bookBidRoot[token], hash, safeMul(bids[bookBidRoot[token]].amountGive, (1 ether)) / bids[bookBidRoot[token]].rate, token);
+        }
+        // if there is any left to give, place in the book
+        if (asks[hash].amountGive > 0) {
+            // increasing order for asks, so check if we are less than
+            if (bookAskRoot[token] == 0) {
                 bookAskRoot[token] = hash;
             } else {
-                bytes32 current = bookAskRoot[token];
-                // increasing order for asks (lowest first)
-                while (asks[current].bookNext != 0 && asks[asks[current].bookNext].rate <= thisRate) {
-                    current = asks[current].bookNext;
+                if (asks[bookAskRoot[token]].rate > thisRate) {
+                    // special case: we go at the front of the book
+                    asks[hash].bookNext = bookAskRoot[token];
+                    asks[bookAskRoot[token]].bookPrev = hash;
+                    bookAskRoot[token] = hash;
+                } else {
+                    bytes32 current = bookAskRoot[token];
+                    // increasing order for asks (lowest first)
+                    while (asks[current].bookNext != 0 && asks[asks[current].bookNext].rate <= thisRate) {
+                        current = asks[current].bookNext;
+                    }
+                    if (asks[current].bookNext != 0) {
+                        // my next is current's next, my new next's previous is me
+                        asks[hash].bookNext = asks[current].bookNext;
+                        asks[asks[hash].bookNext].bookPrev = hash;
+                    }
+                    // my previous is current, current's next is me
+                    asks[hash].bookPrev = current;
+                    asks[current].bookNext = hash;
                 }
-                if (asks[current].bookNext != 0) {
-                    // my next is current's next, my new next's previous is me
-                    asks[hash].bookNext = asks[current].bookNext;
-                    asks[asks[hash].bookNext].bookPrev = hash;
-                }
-                // my previous is current, current's next is me
-                asks[hash].bookPrev = current;
-                asks[current].bookNext = hash;
             }
         }
     }
@@ -289,10 +322,10 @@ contract MyEtherMarket is SafeMath {
         if (bids[takerHash].amountGive >= amountNeededToFillAsk) {// comparing in wei
             // maker gets their order removed and their amount needed to fill
             removeBookAsk(token, makerHash);
-            walletBalance[0][asks[makerHash].user] = safeAdd(walletBalance[token][asks[makerHash].user], amountNeededToFillAsk);
+            walletBalance[0][asks[makerHash].user] = safeAdd(walletBalance[0][asks[makerHash].user], amountNeededToFillAsk);
             // taker reduces his amount given and then gets his tokens
             bids[takerHash].amountGive = safeSub(bids[takerHash].amountGive, amountNeededToFillAsk);
-            walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], asks[takerHash].amountGive);
+            walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], asks[makerHash].amountGive);
         } else {
             // maker gets their amountGive reduced by the taker's available amountGive
             // maker gets all the ether from the taker
