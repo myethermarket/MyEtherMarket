@@ -295,17 +295,18 @@ contract MyEtherMarket is SafeMath {
             // maker gets all the ether from the taker
             walletBalance[0][asks[makerHash].user] = safeAdd(walletBalance[0][asks[makerHash].user], bids[takerHash].amountGive);
             // maker must reduce amountGive at makers rate. This should be less than the remaining amountGive.
+            // if it is not less, it is between rounding tolerance, so clear both orders
             if (safeMul(bids[takerHash].amountGive, (1 ether)) / (asks[makerHash].rate) >= asks[makerHash].amountGive) {
-                // INWORK
                 // we are also clearing the ask order due to rounding
                 removeBookAsk(token, makerHash);
-                // taker gets tokens from the maker
-                walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], safeMul(bids[takerHash].amountGive, (1 ether)) / (asks[makerHash].rate));
+                // taker gets all remainnig tokens from the maker
+                walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], asks[makerHash].amountGive);
             } else {
+                // subtract appropriate amount of tokens from the maker's order
                 asks[makerHash].amountGive = safeSub(asks[makerHash].amountGive, safeMul(bids[takerHash].amountGive, (1 ether)) / (asks[makerHash].rate));
+                // taker gets those tokens from the maker
+                walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], safeMul(bids[takerHash].amountGive, (1 ether)) / (asks[makerHash].rate));
             }
-            // taker gets tokens from the maker
-            walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], safeMul(bids[takerHash].amountGive, (1 ether)) / (asks[makerHash].rate));
             // taker was cleared out
             bids[takerHash].amountGive = 0;
         }
