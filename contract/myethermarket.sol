@@ -100,17 +100,27 @@ contract MyEtherMarket is SafeMath {
     mapping (address => mapping (address => uint)) public walletBalance;
     // this is the minimum size, in wei that an order can have
     uint minOrderSizeWei;
+    uint feeMake;
     
     // constructor, can only be ran on initial contract upload
-    function MyEtherMarket() {
+    // note the feeMake is always divided by 1 ether
+    function MyEtherMarket(uint thisFeeMake) {
         admin = msg.sender;
         minOrderSizeWei = 0;
+        feeMake = thisFeeMake;
     }
     
     // This can be called by the admin to change the minimum order size as the price of ether goes to the moon
     function changeMinOrderSize(uint newMinOrderSizeWei) public {
         require(msg.sender == admin);
         minOrderSizeWei = newMinOrderSizeWei;
+    }
+    
+    // This can be called by the admin to reduce the make fee. No increases allowed that would screw users.
+    function changeFeeMake(uint newFeeMake) public {
+        require(msg.sender == admin);
+        require(newFeeMake < feeMake);
+        feeMake = newFeeMake;
     }
     
     // ---------------------------   DEPOSIT/WITHDRAWAL    -------------------------
