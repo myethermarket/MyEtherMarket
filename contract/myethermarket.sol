@@ -100,14 +100,14 @@ contract MyEtherMarket is SafeMath {
     mapping (address => mapping (address => uint)) public walletBalance;
     // this is the minimum size, in wei that an order can have
     uint minOrderSizeWei;
-    uint feeMake;
+    uint feeTake;
     
     // constructor, can only be ran on initial contract upload
-    // note the feeMake is always divided by 1 ether
-    function MyEtherMarket(uint thisFeeMake) {
+    // note the feeTake is always divided by 1 ether
+    function MyEtherMarket(uint thisfeeTake) {
         admin = msg.sender;
         minOrderSizeWei = 0;
-        feeMake = thisFeeMake;
+        feeTake = thisfeeTake;
     }
     
     // This can be called by the admin to change the minimum order size as the price of ether goes to the moon
@@ -117,10 +117,10 @@ contract MyEtherMarket is SafeMath {
     }
     
     // This can be called by the admin to reduce the make fee. No increases allowed that would screw users.
-    function changeFeeMake(uint newFeeMake) public {
+    function changefeeTake(uint newfeeTake) public {
         require(msg.sender == admin);
-        require(newFeeMake < feeMake);
-        feeMake = newFeeMake;
+        require(newfeeTake < feeTake);
+        feeTake = newfeeTake;
     }
     
     // ---------------------------   DEPOSIT/WITHDRAWAL    -------------------------
@@ -178,7 +178,7 @@ contract MyEtherMarket is SafeMath {
         // check the priceline
         while (bookAskRoot[token] != 0 && thisRate >= asks[bookAskRoot[token]].rate && bids[hash].amountGive > 0) {
             // there is an ask to fill
-            fillAsk(bookAskRoot[token], hash, safeMul(asks[bookAskRoot[token]].amountGive, asks[bookAskRoot[token]].rate) / (1 ether), token);
+            fillAsk(bookAskRoot[token], hash, safeMul(asks[bookAskRoot[token]].amountGive, asks[bookAskRoot[token]].rate) / (1 ether), token, safeMul(bids[hash].amountGive, (1 ether)) / asks[bookAskRoot[token]].rate);
         }
         // if there is any left to give, place in the book
         if (bids[hash].amountGive > 0) {
@@ -224,7 +224,7 @@ contract MyEtherMarket is SafeMath {
     }
     
     // this is called internally to fill a bid in the book
-    function fillBid(bytes32 makerHash, bytes32 takerHash, uint amountTokensNeededToFillBid, address token) private {
+    function fillBid(bytes32 makerHash, bytes32 takerHash, uint amountTokensNeededToFillBid, address token, uint maxTakeAmountEth) private {
        // descriptive: if (amountTokensMyAskCanFill >= amountTokensNeededToFillBid) {
         if (asks[takerHash].amountGive >= amountTokensNeededToFillBid) {// comparing in tokens
             // maker gets their order removed and their amount needed to fill
@@ -233,23 +233,32 @@ contract MyEtherMarket is SafeMath {
             walletBalance[token][bids[makerHash].user] = safeAdd(walletBalance[token][bids[makerHash].user], amountTokensNeededToFillBid);
             // taker reduces his amount given and then gets his ether
             asks[takerHash].amountGive = safeSub(asks[takerHash].amountGive, amountTokensNeededToFillBid);
-            walletBalance[0][msg.sender] = safeAdd(walletBalance[0][msg.sender], bids[makerHash].amountGive);
+            // taker gets all remainnig eth from the maker, minus the fee
+            walletBalance[0][msg.sender] = safeAdd(walletBalance[0][msg.sender], safeSub(bids[makerHash].amountGive, safeMul(bids[makerHash].amountGive, feeTake) / (1 ether)));
+            // pay the fee
+            walletBalance[0][admin] = safeAdd(walletBalance[0][admin], safeMul(bids[makerHash].amountGive, feeTake) / (1 ether));
+            
         } else {
             // maker gets their amountGive reduced by the taker's available amountGive
             // maker gets all the tokens from the taker
             walletBalance[token][bids[makerHash].user] = safeAdd(walletBalance[token][bids[makerHash].user], asks[takerHash].amountGive);
             // maker must reduce amountGive at makers rate. This should be less than the remaining amountGive.
             // if it is not less, it is between rounding tolerance, so clear both orders
-            if (safeMul(asks[takerHash].amountGive, bids[makerHash].rate) / (1 ether) >= bids[makerHash].amountGive) { // comparing in wei
+            if (maxTakeAmountEth >= bids[makerHash].amountGive) { // comparing in wei
                 // we are also clearing the ask order due to rounding
                 removeBookBid(token, makerHash);
-                // taker gets all remainnig eth from the maker
-                walletBalance[0][msg.sender] = safeAdd(walletBalance[0][msg.sender], bids[makerHash].amountGive);
+                // taker gets all remainnig eth from the maker, minus the fee
+                walletBalance[0][msg.sender] = safeAdd(walletBalance[0][msg.sender], safeSub(bids[makerHash].amountGive, safeMul(bids[makerHash].amountGive, feeTake) / (1 ether)));
+                // pay the fee
+                walletBalance[0][admin] = safeAdd(walletBalance[0][admin], safeMul(bids[makerHash].amountGive, feeTake) / (1 ether));
             } else {
                 // subtract appropriate amount of tokens from the maker's order
-                bids[makerHash].amountGive = safeSub(bids[makerHash].amountGive, safeMul(asks[takerHash].amountGive, bids[makerHash].rate) / (1 ether));
-                // taker gets those eth from the maker
-                walletBalance[0][msg.sender] = safeAdd(walletBalance[0][msg.sender], safeMul(asks[takerHash].amountGive, bids[makerHash].rate) / (1 ether));
+                bids[makerHash].amountGive = safeSub(bids[makerHash].amountGive, maxTakeAmountEth);
+                // taker gets those eth from the maker, minus the fee
+                // defined in memory to save gas: uint maxTakeAmountEth = safeMul(asks[takerHash].amountGive, bids[makerHash].rate) / (1 ether);
+                walletBalance[0][msg.sender] = safeAdd(walletBalance[0][msg.sender], safeSub(maxTakeAmountEth, safeMul(maxTakeAmountEth, feeTake) / (1 ether)));
+                // pay the fee
+                walletBalance[0][admin] = safeAdd(walletBalance[0][admin], safeMul(maxTakeAmountEth, feeTake) / (1 ether));
             }
             // taker was cleared out
             asks[takerHash].amountGive = 0;
@@ -289,7 +298,7 @@ contract MyEtherMarket is SafeMath {
         // check the priceline
         while (bookBidRoot[token] != 0 && thisRate <= bids[bookBidRoot[token]].rate && asks[hash].amountGive > 0) {
             // there is a bid to fill
-            fillBid(bookBidRoot[token], hash, safeMul(bids[bookBidRoot[token]].amountGive, (1 ether)) / bids[bookBidRoot[token]].rate, token);
+            fillBid(bookBidRoot[token], hash, safeMul(bids[bookBidRoot[token]].amountGive, (1 ether)) / bids[bookBidRoot[token]].rate, token, safeMul(asks[hash].amountGive, bids[bookBidRoot[token]].rate) / (1 ether));
         }
         // if there is any left to give, place in the book
         if (asks[hash].amountGive > 0) {
@@ -336,7 +345,7 @@ contract MyEtherMarket is SafeMath {
     
     // this is called internally to fill an ask in the book
     // assumes the rate check has already occured. uses maker's rate.
-    function fillAsk(bytes32 makerHash, bytes32 takerHash, uint amountNeededToFillAsk, address token) private {
+    function fillAsk(bytes32 makerHash, bytes32 takerHash, uint amountNeededToFillAsk, address token, uint maxTakeAmountTokens) private {
         // descriptive: if (amountToTake >= amountNeededToFillAsk) {
         if (bids[takerHash].amountGive >= amountNeededToFillAsk) {// comparing in wei
             // maker gets their order removed and their amount needed to fill
@@ -344,23 +353,29 @@ contract MyEtherMarket is SafeMath {
             walletBalance[0][asks[makerHash].user] = safeAdd(walletBalance[0][asks[makerHash].user], amountNeededToFillAsk);
             // taker reduces his amount given and then gets his tokens
             bids[takerHash].amountGive = safeSub(bids[takerHash].amountGive, amountNeededToFillAsk);
-            walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], asks[makerHash].amountGive);
+            // take all the tokens, minus the fees
+            walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], safeSub(asks[makerHash].amountGive, safeMul(asks[makerHash].amountGive, feeTake) / (1 ether)));
+            // pay the fee
+            walletBalance[token][admin] = safeAdd(walletBalance[token][admin], safeMul(asks[makerHash].amountGive, feeTake) / (1 ether));
         } else {
             // maker gets their amountGive reduced by the taker's available amountGive
             // maker gets all the ether from the taker
             walletBalance[0][asks[makerHash].user] = safeAdd(walletBalance[0][asks[makerHash].user], bids[takerHash].amountGive);
             // maker must reduce amountGive at makers rate. This should be less than the remaining amountGive.
             // if it is not less, it is between rounding tolerance, so clear both orders
-            if (safeMul(bids[takerHash].amountGive, (1 ether)) / (asks[makerHash].rate) >= asks[makerHash].amountGive) {
+            if (maxTakeAmountTokens >= asks[makerHash].amountGive) {
                 // we are also clearing the ask order due to rounding
                 removeBookAsk(token, makerHash);
-                // taker gets all remainnig tokens from the maker
-                walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], asks[makerHash].amountGive);
+                // take all the tokens, minus the fees
+                walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], safeSub(asks[makerHash].amountGive, safeMul(asks[makerHash].amountGive, feeTake) / (1 ether)));
+                // pay the fee
+                walletBalance[token][admin] = safeAdd(walletBalance[token][admin], safeMul(asks[makerHash].amountGive, feeTake) / (1 ether));
             } else {
                 // subtract appropriate amount of tokens from the maker's order
-                asks[makerHash].amountGive = safeSub(asks[makerHash].amountGive, safeMul(bids[takerHash].amountGive, (1 ether)) / (asks[makerHash].rate));
+                asks[makerHash].amountGive = safeSub(asks[makerHash].amountGive, maxTakeAmountTokens);
                 // taker gets those tokens from the maker
-                walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], safeMul(bids[takerHash].amountGive, (1 ether)) / (asks[makerHash].rate));
+                walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], safeSub(maxTakeAmountTokens, safeMul(maxTakeAmountTokens, feeTake) / (1 ether)));
+                walletBalance[token][admin] = safeAdd(walletBalance[token][admin], safeMul(maxTakeAmountTokens, feeTake) / (1 ether));
             }
             // taker was cleared out
             bids[takerHash].amountGive = 0;
