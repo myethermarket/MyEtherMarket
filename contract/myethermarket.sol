@@ -104,23 +104,23 @@ contract MyEtherMarket is SafeMath {
     
     // constructor, can only be ran on initial contract upload
     // note the feeTake is always divided by 1 ether
-    function MyEtherMarket(uint thisfeeTake) {
+    function MyEtherMarket(uint minOrderSizeWei_, uint thisfeeTake_) {
         admin = msg.sender;
-        minOrderSizeWei = 0;
-        feeTake = thisfeeTake;
+        minOrderSizeWei = minOrderSizeWei_;
+        feeTake = thisfeeTake_;
     }
     
     // This can be called by the admin to change the minimum order size as the price of ether goes to the moon
-    function changeMinOrderSize(uint newMinOrderSizeWei) public {
+    function changeMinOrderSize(uint MinOrderSizeWei_) public {
         require(msg.sender == admin);
-        minOrderSizeWei = newMinOrderSizeWei;
+        minOrderSizeWei = MinOrderSizeWei_;
     }
     
     // This can be called by the admin to reduce the make fee. No increases allowed that would screw users.
-    function changefeeTake(uint newfeeTake) public {
+    function changefeeTake(uint feeTake_) public {
         require(msg.sender == admin);
-        require(newfeeTake < feeTake);
-        feeTake = newfeeTake;
+        require(feeTake_ < feeTake);
+        feeTake = feeTake_;
     }
     
     // ---------------------------   DEPOSIT/WITHDRAWAL    -------------------------
