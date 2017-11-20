@@ -98,11 +98,20 @@ contract MyEtherMarket is SafeMath {
     mapping (address => bytes32) bookAskRoot;
     // MyEtherMarket wallet balances. keys are [tokenAddr][userAddr]; (token=0 means Ether)
     mapping (address => mapping (address => uint)) public walletBalance;
+    // this is the minimum size, in wei that an order can have
+    uint minOrderSizeWei;
+    
     // constructor, can only be ran on initial contract upload
     function MyEtherMarket() {
         admin = msg.sender;
+        minOrderSizeWei = 0;
     }
     
+    // This can be called by the admin to change the minimum order size as the price of ether goes to the moon
+    function changeMinOrderSize(uint newMinOrderSizeWei) public {
+        require(msg.sender == admin);
+        minOrderSizeWei = newMinOrderSizeWei;
+    }
     
     // ---------------------------   DEPOSIT/WITHDRAWAL    -------------------------
     // ETHER
@@ -138,8 +147,8 @@ contract MyEtherMarket is SafeMath {
     
     // ---------------------------------   BIDS    ---------------------------------
     // this would be called by the user to offer a new bid
-    // TODO: likely create a minimum order threshhold in eth, probably a dynamic variable controlled by admin. This would be to economically prevent book spam attacks.
     function newBid(address token, uint amountGive, uint rate, uint nonce) public returns (bytes32 hash){
+        require(amountGive >= minOrderSizeWei);
         // Creates new struct and saves in storage. We leave out the mapping type.
         hash = sha256(msg.sender, token, amountGive, rate, nonce);
         // safely deduct funds from user's MEM walletBalance
@@ -250,8 +259,8 @@ contract MyEtherMarket is SafeMath {
     // ---------------------------------   ASKS    ---------------------------------
     
     // this would be called by the user to offer a new ask
-    // TODO: likely create a minimum order threshhold in eth, probably a dynamic variable controlled by admin. This would be to economically prevent book spam attacks.
     function newAsk(address token, uint amountGive, uint rate, uint nonce) public returns (bytes32 hash){
+        require(safeMul(amountGive, rate) / (1 ether) > minOrderSizeWei);
         // Creates new struct and saves in storage. We leave out the mapping type.
         hash = sha256(this, token, amountGive, rate, nonce);
         // safely deduct funds from user's MEM walletBalance
