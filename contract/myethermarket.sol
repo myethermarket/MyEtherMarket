@@ -277,6 +277,16 @@ contract MyEtherMarket is SafeMath {
         }
     }
     
+    // this is called by a user to cancel their bid and reclaim their funds
+    function cancelBid(address token, bytes32 hash) public {
+        // only a user can cancel their own order
+        require(bids[hash].user == msg.sender);
+        // remove the order from the book
+        removeBookBid(token, hash);
+        // return the eth to the user
+        walletBalance[0][msg.sender] = safeAdd(walletBalance[0][msg.sender], bids[hash].amountGive);
+    }
+    
     // this is called internally to remove a bid from the book
     function removeBookBid(address token, bytes32 hash) private {
         if (bookBidRoot[token] == hash) {
@@ -395,6 +405,16 @@ contract MyEtherMarket is SafeMath {
                 }
             }
         }
+    }
+    
+    // this is called by a user to cancel their ask and reclaim their funds
+    function cancelAsk(address token, bytes32 hash) public {
+        // only a user can cancel their own order
+        require(asks[hash].user == msg.sender);
+        // remove the order from the book
+        removeBookAsk(token, hash);
+        // return the tokens to the user
+        walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], bids[hash].amountGive);
     }
     
     // this is called internally to remove a bid from the book
