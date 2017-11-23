@@ -281,13 +281,18 @@ contract MyEtherMarket is SafeMath {
     function cancelBid(address token, bytes32 hash) public {
         // only a user can cancel their own order
         require(bids[hash].user == msg.sender);
+        // require the order to be active
+        require(bids[hash].amountGive > 0);
         // remove the order from the book
         removeBookBid(token, hash);
         // return the eth to the user
         walletBalance[0][msg.sender] = safeAdd(walletBalance[0][msg.sender], bids[hash].amountGive);
+        // fully close out to prevent repeat cancellation
+        bids[hash].amountGive = 0;
     }
     
     // this is called internally to remove a bid from the book
+    // note this makes no state changes to the actual order. must set amountGive to zero elsewhere, but efficient to have as reference so not changed here.
     function removeBookBid(address token, bytes32 hash) private {
         if (bookBidRoot[token] == hash) {
             bookBidRoot[token] = bids[hash].bookNext;
@@ -314,7 +319,8 @@ contract MyEtherMarket is SafeMath {
             walletBalance[0][msg.sender] = safeAdd(walletBalance[0][msg.sender], safeSub(bids[makerHash].amountGive, safeMul(bids[makerHash].amountGive, feeTake) / (1 ether)));
             // pay the fee
             walletBalance[0][admin] = safeAdd(walletBalance[0][admin], safeMul(bids[makerHash].amountGive, feeTake) / (1 ether));
-            
+            // fully close the maker's order (to prevent post-trade cancellation)
+            bids[makerHash].amountGive = 0;
         } else {
             // maker gets their amountGive reduced by the taker's available amountGive
             // maker gets all the tokens from the taker
@@ -328,6 +334,8 @@ contract MyEtherMarket is SafeMath {
                 walletBalance[0][msg.sender] = safeAdd(walletBalance[0][msg.sender], safeSub(bids[makerHash].amountGive, safeMul(bids[makerHash].amountGive, feeTake) / (1 ether)));
                 // pay the fee
                 walletBalance[0][admin] = safeAdd(walletBalance[0][admin], safeMul(bids[makerHash].amountGive, feeTake) / (1 ether));
+                // fully close the maker's order (to prevent post-trade cancellation)
+                bids[makerHash].amountGive = 0;
             } else {
                 // subtract appropriate amount of tokens from the maker's order
                 bids[makerHash].amountGive = safeSub(bids[makerHash].amountGive, maxTakeAmountEth);
@@ -411,13 +419,18 @@ contract MyEtherMarket is SafeMath {
     function cancelAsk(address token, bytes32 hash) public {
         // only a user can cancel their own order
         require(asks[hash].user == msg.sender);
+        // require the order to be active
+        require(asks[hash].amountGive > 0);
         // remove the order from the book
         removeBookAsk(token, hash);
         // return the tokens to the user
         walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], bids[hash].amountGive);
+        // fully close out the order to prevent repeat cancellation
+        asks[hash].amountGive = 0;
     }
     
     // this is called internally to remove a bid from the book
+    // note this makes no state changes to the actual order. must set amountGive to zero elsewhere, but efficient to have as reference so not changed here.
     function removeBookAsk(address token, bytes32 hash) private {
         if (bookAskRoot[token] == hash) {
             bookAskRoot[token] = asks[hash].bookNext;
@@ -444,6 +457,8 @@ contract MyEtherMarket is SafeMath {
             walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], safeSub(asks[makerHash].amountGive, safeMul(asks[makerHash].amountGive, feeTake) / (1 ether)));
             // pay the fee
             walletBalance[token][admin] = safeAdd(walletBalance[token][admin], safeMul(asks[makerHash].amountGive, feeTake) / (1 ether));
+            // fully close the maker's order (to prevent post-trade cancellation)
+            asks[makerHash].amountGive = 0;
         } else {
             // maker gets their amountGive reduced by the taker's available amountGive
             // maker gets all the ether from the taker
@@ -457,6 +472,8 @@ contract MyEtherMarket is SafeMath {
                 walletBalance[token][msg.sender] = safeAdd(walletBalance[token][msg.sender], safeSub(asks[makerHash].amountGive, safeMul(asks[makerHash].amountGive, feeTake) / (1 ether)));
                 // pay the fee
                 walletBalance[token][admin] = safeAdd(walletBalance[token][admin], safeMul(asks[makerHash].amountGive, feeTake) / (1 ether));
+                // fully close the maker's order (to prevent post-trade cancellation)
+                asks[makerHash].amountGive = 0;
             } else {
                 // subtract appropriate amount of tokens from the maker's order
                 asks[makerHash].amountGive = safeSub(asks[makerHash].amountGive, maxTakeAmountTokens);
